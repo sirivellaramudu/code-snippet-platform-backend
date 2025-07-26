@@ -16,86 +16,134 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const app = express();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// Parse ALLOWED_ORIGINS safely
+// Parse ALLOWED_ORIGINS safely with detailed logging
 const parseAllowedOrigins = () => {
+  console.log('Starting parseAllowedOrigins');
   try {
-    const origins = (process.env.ALLOWED_ORIGINS || FRONTEND_URL || '')
+    console.log('Raw ALLOWED_ORIGINS:', JSON.stringify(process.env.ALLOWED_ORIGINS));
+    console.log('Raw FRONTEND_URL:', JSON.stringify(process.env.FRONTEND_URL));
+    
+    // Default to localhost if nothing is set
+    const defaultOrigins = ['http://localhost:3000'];
+    const originsString = process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || '';
+    
+    if (!originsString) {
+      console.warn('No origins configured, using defaults:', defaultOrigins);
+      return defaultOrigins;
+    }
+    
+    const origins = originsString
       .split(',')
       .map(o => o.trim())
       .filter(Boolean);
     
+    console.log('Processed origins array:', JSON.stringify(origins, null, 2));
+    
     // Validate each URL
-    return origins.filter(origin => {
+    const validOrigins = [];
+    for (const origin of origins) {
       try {
-        new URL(origin);
-        return true;
+        // Skip empty strings
+        if (!origin) continue;
+        
+        // Basic URL validation
+        if (!origin.match(/^https?:\/\//)) {
+          console.error(`Invalid URL protocol in origin: ${origin}`);
+          continue;
+        }
+        
+        // Create URL object to validate format
+        const url = new URL(origin);
+        const originToAdd = url.origin || origin;
+        
+        if (!validOrigins.includes(originToAdd)) {
+          validOrigins.push(originToAdd);
+          console.log(`Added valid origin: ${originToAdd}`);
+        }
       } catch (e) {
-        console.error(`Invalid URL in ALLOWED_ORIGINS: ${origin}`, e);
-        return false;
+        console.error(`Invalid URL in origins: ${origin}`, e.message);
       }
-    });
+    }
+    
+    if (validOrigins.length === 0) {
+      console.warn('No valid origins found, using defaults:', defaultOrigins);
+      return defaultOrigins;
+    }
+    
+    console.log('Final valid origins:', JSON.stringify(validOrigins, null, 2));
+    return validOrigins;
+    
   } catch (e) {
-    console.error('Error parsing ALLOWED_ORIGINS:', e);
-    return [];
+    console.error('Fatal error in parseAllowedOrigins:', e);
+    return ['http://localhost:3000'];
   }
 };
 
-let allowedOrigins = parseAllowedOrigins();
+// Initialize allowed origins
+console.log('Initializing allowed origins...');
+const allowedOrigins = parseAllowedOrigins();
 
-// Add Google OAuth callback URLs to allowed origins
-try {
-  const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL || 
-    `${process.env.BASE_URL || 'http://localhost:4000'}/auth/google/callback`;
-  const googleAuthDomain = new URL(googleCallbackUrl).origin;
+// Simple CORS middleware that logs all requests
+const corsMiddleware = (req, res, next) => {
+  console.log(`\n--- New Request: ${req.method} ${req.originalUrl} ---`);
+  console.log('Origin:', req.headers.origin || 'No origin header');
   
-  if (!allowedOrigins.includes(googleAuthDomain)) {
-    allowedOrigins.push(googleAuthDomain);
+  // Always set Vary header
+  res.header('Vary', 'Origin');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS preflight request');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    return res.status(200).end();
   }
-} catch (e) {
-  console.error('Error configuring Google OAuth callback URL:', e);
-}
-
-// CORS configuration
-const corsOptions = {
-  origin: (origin, callback) => {
-    // Allow requests with no origin (e.g., server-to-server, Postman, OAuth callbacks)
-    if (!origin) return callback(null, true);
-    
+  
+  // Handle regular requests
+  const origin = req.headers.origin;
+  if (origin) {
     try {
-      // Check if the origin is in the allowed origins
       const originUrl = new URL(origin);
       const isAllowed = allowedOrigins.some(allowedOrigin => {
         try {
           const allowedUrl = new URL(allowedOrigin);
           return originUrl.origin === allowedUrl.origin;
         } catch (e) {
+          console.error('Error comparing URLs:', e.message);
           return false;
         }
       });
-
-      if (isAllowed || 
-          origin.includes('accounts.google.com') || 
-          origin.includes('google.com')) {
-        return callback(null, true);
+      
+      // Special handling for OAuth providers
+      const isOAuthProvider = origin.includes('accounts.google.com') || 
+                            origin.includes('google.com') ||
+                            origin.includes('login.microsoftonline.com');
+      
+      if (isAllowed || isOAuthProvider) {
+        console.log(`Allowing CORS for origin: ${origin}`);
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+      } else {
+        console.warn(`CORS blocked for origin: ${origin}`);
       }
-      
-      console.error('CORS blocked for origin:', origin);
-      console.error('Allowed origins:', allowedOrigins);
-      return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
-      
     } catch (e) {
-      console.error('Error processing CORS origin check:', e);
-      return callback(new Error('Invalid origin'));
+      console.error('Error processing origin:', e);
     }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  exposedHeaders: ['set-cookie']
+  }
+  
+  next();
 };
 
-app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+// Apply CORS middleware before other middleware
+console.log('Applying CORS middleware...');
+app.use(corsMiddleware);
+
+// Add request logging middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 app.use(express.json());
 app.use(session({
