@@ -70,6 +70,7 @@ const ensureAuthenticated = (req, res, next) => {
   res.status(401).json({ error: 'Unauthorized' });
 };
 
+const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
 const io = require('socket.io')(server, {
   cors: {
@@ -194,4 +195,4 @@ app.post('/execute', async (req, res) => {
   }
 });
 
-server.listen(4000, () => console.log('Server running on port 4000'));
+server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
