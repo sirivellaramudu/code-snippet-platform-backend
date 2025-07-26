@@ -136,15 +136,22 @@ const corsMiddleware = (req, res, next) => {
 };
 
 // Apply CORS middleware before other middleware
-console.log('Applying CORS middleware...');
-app.use(corsMiddleware);
+// --- CORS Configuration ---
+// Get the allowed origins from environment variables.
+// Your parseAllowedOrigins function is good, so we'll keep using it.
+const allowedOrigins = parseAllowedOrigins();
 
-// Add request logging middleware
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
-  next();
-});
+// Log the final origins being used for CORS
+console.log('CORS will be configured for these origins:', allowedOrigins);
 
+// Use the cors middleware with the correct options
+app.use(cors({
+  // The origin property takes the list of allowed domains
+  origin: allowedOrigins,
+  
+  // This is crucial for your authentication to work
+  credentials: true
+}));
 app.use(express.json());
 
 // Session configuration
