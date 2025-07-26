@@ -39,7 +39,7 @@ passport.deserializeUser((user, done) => {
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: `${process.env.BASE_URL}/auth/google/callback`,
+  callbackURL: process.env.GOOGLE_CALLBACK_URL || `${process.env.BASE_URL}/auth/google/callback`,
 }, (accessToken, refreshToken, profile, done) => {
   return done(null, { provider: 'google', ...profile._json });
 }));
@@ -52,7 +52,7 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
     clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
     responseType: 'code',
     responseMode: 'query',
-    redirectUrl: `${process.env.BASE_URL}/auth/microsoft/callback`,
+    redirectUrl: process.env.MICROSOFT_CALLBACK_URL || `${process.env.BASE_URL}/auth/microsoft/callback`,
     allowHttpForRedirectUrl: true,
     scope: ['profile', 'email', 'openid']
   }, (iss, sub, profile, accessToken, refreshToken, done) => {
