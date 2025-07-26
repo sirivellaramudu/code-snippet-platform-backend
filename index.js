@@ -146,15 +146,34 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'secret',
+
+// Session configuration
+const sessionConfig = {
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
-  }
-}));
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
+    httpOnly: true, // Prevent client-side JavaScript access
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Required for cross-site cookies
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    domain: process.env.NODE_ENV === 'production' ? '.yourdomain.com' : undefined // Set domain in production
+  },
+  name: 'code-snippet-platform.sid', // Custom session cookie name
+  rolling: true, // Reset maxAge on every request
+  proxy: process.env.NODE_ENV === 'production' // Trust proxy in production
+};
+
+// Apply session middleware
+app.use(session(sessionConfig));
+console.log('Session configuration:', {
+  secure: sessionConfig.cookie.secure,
+  sameSite: sessionConfig.cookie.sameSite,
+  httpOnly: sessionConfig.cookie.httpOnly,
+  domain: sessionConfig.cookie.domain
+});
+
+// Initialize Passport and restore authentication state from session
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -166,12 +185,44 @@ passport.deserializeUser((user, done) => {
 });
 
 // Google SSO
+const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL || 
+  `${process.env.BASE_URL || 'http://localhost:4000'}/auth/google/callback`;
+
+console.log('Google OAuth Configuration:', {
+  clientID: process.env.GOOGLE_CLIENT_ID ? '***SET***' : 'MISSING',
+  callbackURL: googleCallbackUrl,
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000'
+});
+
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL || `${process.env.BASE_URL}/auth/google/callback`,
-}, (accessToken, refreshToken, profile, done) => {
-  return done(null, { provider: 'google', ...profile._json });
+  callbackURL: googleCallbackUrl,
+  proxy: process.env.NODE_ENV === 'production', // Trust proxy in production
+  passReqToCallback: true
+}, (req, accessToken, refreshToken, profile, done) => {
+  try {
+    console.log('Google OAuth profile received:', {
+      id: profile.id,
+      email: profile.emails?.[0]?.value,
+      name: profile.displayName
+    });
+    
+    // Add the user's profile information to the session
+    const user = {
+      provider: 'google',
+      id: profile.id,
+      email: profile.emails?.[0]?.value,
+      name: profile.displayName,
+      picture: profile.photos?.[0]?.value,
+      ...profile._json
+    };
+    
+    return done(null, user);
+  } catch (error) {
+    console.error('Error in Google OAuth callback:', error);
+    return done(error, null);
+  }
 }));
 
 // Microsoft SSO (only if credentials are present)
