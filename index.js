@@ -15,8 +15,19 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+// Support multiple allowed origins, comma-separated
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || FRONTEND_URL)
+  .split(',')
+  .map(o => o.trim());
+
 app.use(cors({
-  origin: FRONTEND_URL,
+  origin: (origin, callback) => {
+    // allow requests with no origin (e.g., server-to-server, Postman)
+    if (!origin) return callback(null, true);
+    return allowedOrigins.includes(origin)
+      ? callback(null, true)
+      : callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 app.use(express.json());
@@ -78,7 +89,7 @@ const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
 const io = require('socket.io')(server, {
   cors: {
-    origin: FRONTEND_URL,
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true
   }
