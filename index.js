@@ -96,7 +96,8 @@ app.get('/auth/google/callback', (req, res, next) => {
   session: true
 }), (req, res) => {
   console.log('GOOGLE LOGIN SUCCESS', req.user);
-  res.redirect('http://localhost:3000'); // Redirect to frontend after login
+  const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+  res.redirect(FRONTEND_URL); // Redirect to frontend after login
 });
 
 // Test route to verify backend is running
@@ -110,12 +111,14 @@ app.post('/auth/microsoft/callback', passport.authenticate('azuread-openidconnec
   failureRedirect: '/login-failed',
   session: true
 }), (req, res) => {
-  res.redirect('http://localhost:3000');
+  const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+  res.redirect(FRONTEND_URL);
 });
 
 app.get('/auth/logout', (req, res) => {
   req.logout(() => {
-    res.redirect('http://localhost:3000');
+    const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+  res.redirect(FRONTEND_URL);
   });
 });
 
