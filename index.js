@@ -163,12 +163,14 @@ const sessionConfig = {
     httpOnly: true, // Prevent client-side JavaScript access
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Required for cross-site cookies
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    domain: process.env.NODE_ENV === 'production' ? '.yourdomain.com' : undefined // Set domain in production
+
   },
   name: 'code-snippet-platform.sid', // Custom session cookie name
   rolling: true, // Reset maxAge on every request
   proxy: process.env.NODE_ENV === 'production' // Trust proxy in production
 };
+
+
 
 // Apply session middleware
 app.use(session(sessionConfig));
