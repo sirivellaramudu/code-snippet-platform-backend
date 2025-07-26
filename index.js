@@ -77,6 +77,70 @@ if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
   console.log('Microsoft SSO is disabled: MICROSOFT_CLIENT_ID or MICROSOFT_CLIENT_SECRET not set');
 }
 
+// --- Request Logging Middleware ---
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  // Log the request
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`, {
+    headers: req.headers,
+    query: req.query,
+    body: req.body,
+  });
+  
+  // Capture the response finish event to log the response
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl} - ${res.statusCode} ${res.statusMessage} - ${duration}ms`);
+  });
+  
+  next();
+});
+
+// --- Error Handling Middleware ---
+app.use((err, req, res, next) => {
+  console.error(`[${new Date().toISOString()}] Error:`, {
+    message: err.message,
+    stack: process.env.NODE_ENV === 'production' ? undefined : err.stack,
+    url: req.originalUrl,
+    method: req.method,
+    headers: req.headers,
+    body: req.body,
+    query: req.query,
+    params: req.params
+  });
+
+  // Handle CORS errors
+  if (err.message.includes('CORS')) {
+    return res.status(403).json({
+      error: 'Not allowed by CORS',
+      message: err.message,
+      allowedOrigins: process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL
+    });
+  }
+
+  // Handle authentication errors
+  if (err.name === 'AuthenticationError' || err.status === 401) {
+    return res.status(401).json({
+      error: 'Authentication failed',
+      message: err.message || 'Invalid credentials or session expired'
+    });
+  }
+
+  // Handle validation errors
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
+      error: 'Validation Error',
+      details: err.details || err.message
+    });
+  }
+
+  // Default error response
+  res.status(err.status || 500).json({
+    error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  });
+});
 
 const ensureAuthenticated = (req, res, next) => {
   if (req.isAuthenticated()) {
@@ -94,8 +158,6 @@ const io = require('socket.io')(server, {
     credentials: true
   }
 });
-
-
 
 // --- SSO ROUTES ---
 app.get('/auth/google', (req, res, next) => {
@@ -144,7 +206,6 @@ app.get('/auth/user', (req, res) => {
     res.status(401).json({ error: 'Not authenticated' });
   }
 });
-
 
 // --- Real-time code sharing with per-room state ---
 const roomCodeState = {};
@@ -213,4 +274,52 @@ app.post('/execute', async (req, res) => {
   }
 });
 
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// 404 Handler - Must be after all other routes
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Not Found',
+    message: `Cannot ${req.method} ${req.originalUrl}`
+  });
+});
+
+// --- Server Startup ---
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`CORS Allowed Origins: ${process.env.ALLOWED_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+  console.log(`Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
+  console.log('Available Routes:');
+  // Log available routes
+  const routes = [];
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      routes.push({
+        path: middleware.route.path,
+        methods: Object.keys(middleware.route.methods).filter(m => m !== '_all')
+      });
+    } else if (middleware.name === 'router') {
+      middleware.handle.stack.forEach(handler => {
+        if (handler.route) {
+          routes.push({
+            path: handler.route.path,
+            methods: Object.keys(handler.route.methods).filter(m => m !== '_all')
+          });
+        }
+      });
+    }
+  });
+  console.table(routes);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Consider sending to error tracking service
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Consider performing cleanup and exiting
+  // process.exit(1); // Exit with failure
+});
