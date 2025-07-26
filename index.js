@@ -14,8 +14,9 @@ dotenv.config();
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 app.use(cors({
-  origin: 'http://localhost:3000', // React dev server
+  origin: FRONTEND_URL,
   credentials: true
 }));
 app.use(express.json());
@@ -23,7 +24,10 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'secret',
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false }
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+  }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -74,7 +78,7 @@ const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
 const io = require('socket.io')(server, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: FRONTEND_URL,
     methods: ['GET', 'POST'],
     credentials: true
   }
