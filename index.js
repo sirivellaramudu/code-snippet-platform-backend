@@ -18,18 +18,48 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 // Support multiple allowed origins, comma-separated
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || FRONTEND_URL)
   .split(',')
-  .map(o => o.trim());
+  .map(o => o.trim())
+  .filter(Boolean);
+
+// Add Google OAuth callback URLs to allowed origins
+const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL || `${process.env.BASE_URL || 'http://localhost:4000'}/auth/google/callback`;
+const googleAuthDomain = new URL(googleCallbackUrl).origin;
+if (!allowedOrigins.includes(googleAuthDomain)) {
+  allowedOrigins.push(googleAuthDomain);
+}
 
 app.use(cors({
   origin: (origin, callback) => {
-    // allow requests with no origin (e.g., server-to-server, Postman)
+    // Allow requests with no origin (e.g., server-to-server, Postman, OAuth callbacks)
     if (!origin) return callback(null, true);
-    return allowedOrigins.includes(origin)
-      ? callback(null, true)
-      : callback(new Error('Not allowed by CORS'));
+    
+    // Check if the origin is in the allowed origins
+    const allowed = allowedOrigins.some(allowedOrigin => {
+      try {
+        const allowedUrl = new URL(allowedOrigin);
+        const originUrl = new URL(origin);
+        return originUrl.origin === allowedUrl.origin;
+      } catch (e) {
+        return false;
+      }
+    });
+    
+    if (allowed || origin.includes('accounts.google.com') || origin.includes('google.com')) {
+      return callback(null, true);
+    }
+    
+    console.error('CORS blocked for origin:', origin);
+    console.error('Allowed origins:', allowedOrigins);
+    return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
   },
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['set-cookie']
 }));
+
+app.options('*', cors());
+
 app.use(express.json());
 app.use(session({
   secret: process.env.SESSION_SECRET || 'secret',
