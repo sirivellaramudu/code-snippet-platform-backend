@@ -15,50 +15,87 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const app = express();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-// Support multiple allowed origins, comma-separated
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || FRONTEND_URL)
-  .split(',')
-  .map(o => o.trim())
-  .filter(Boolean);
+
+// Parse ALLOWED_ORIGINS safely
+const parseAllowedOrigins = () => {
+  try {
+    const origins = (process.env.ALLOWED_ORIGINS || FRONTEND_URL || '')
+      .split(',')
+      .map(o => o.trim())
+      .filter(Boolean);
+    
+    // Validate each URL
+    return origins.filter(origin => {
+      try {
+        new URL(origin);
+        return true;
+      } catch (e) {
+        console.error(`Invalid URL in ALLOWED_ORIGINS: ${origin}`, e);
+        return false;
+      }
+    });
+  } catch (e) {
+    console.error('Error parsing ALLOWED_ORIGINS:', e);
+    return [];
+  }
+};
+
+let allowedOrigins = parseAllowedOrigins();
 
 // Add Google OAuth callback URLs to allowed origins
-const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL || `${process.env.BASE_URL || 'http://localhost:4000'}/auth/google/callback`;
-const googleAuthDomain = new URL(googleCallbackUrl).origin;
-if (!allowedOrigins.includes(googleAuthDomain)) {
-  allowedOrigins.push(googleAuthDomain);
+try {
+  const googleCallbackUrl = process.env.GOOGLE_CALLBACK_URL || 
+    `${process.env.BASE_URL || 'http://localhost:4000'}/auth/google/callback`;
+  const googleAuthDomain = new URL(googleCallbackUrl).origin;
+  
+  if (!allowedOrigins.includes(googleAuthDomain)) {
+    allowedOrigins.push(googleAuthDomain);
+  }
+} catch (e) {
+  console.error('Error configuring Google OAuth callback URL:', e);
 }
 
-app.use(cors({
+// CORS configuration
+const corsOptions = {
   origin: (origin, callback) => {
     // Allow requests with no origin (e.g., server-to-server, Postman, OAuth callbacks)
     if (!origin) return callback(null, true);
     
-    // Check if the origin is in the allowed origins
-    const allowed = allowedOrigins.some(allowedOrigin => {
-      try {
-        const allowedUrl = new URL(allowedOrigin);
-        const originUrl = new URL(origin);
-        return originUrl.origin === allowedUrl.origin;
-      } catch (e) {
-        return false;
+    try {
+      // Check if the origin is in the allowed origins
+      const originUrl = new URL(origin);
+      const isAllowed = allowedOrigins.some(allowedOrigin => {
+        try {
+          const allowedUrl = new URL(allowedOrigin);
+          return originUrl.origin === allowedUrl.origin;
+        } catch (e) {
+          return false;
+        }
+      });
+
+      if (isAllowed || 
+          origin.includes('accounts.google.com') || 
+          origin.includes('google.com')) {
+        return callback(null, true);
       }
-    });
-    
-    if (allowed || origin.includes('accounts.google.com') || origin.includes('google.com')) {
-      return callback(null, true);
+      
+      console.error('CORS blocked for origin:', origin);
+      console.error('Allowed origins:', allowedOrigins);
+      return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+      
+    } catch (e) {
+      console.error('Error processing CORS origin check:', e);
+      return callback(new Error('Invalid origin'));
     }
-    
-    console.error('CORS blocked for origin:', origin);
-    console.error('Allowed origins:', allowedOrigins);
-    return callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   exposedHeaders: ['set-cookie']
-}));
+};
 
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 
 app.use(express.json());
 app.use(session({
