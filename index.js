@@ -139,7 +139,6 @@ const corsMiddleware = (req, res, next) => {
 // --- CORS Configuration ---
 // Get the allowed origins from environment variables.
 // Your parseAllowedOrigins function is good, so we'll keep using it.
-const allowedOrigins = parseAllowedOrigins();
 
 // Log the final origins being used for CORS
 console.log('CORS will be configured for these origins:', allowedOrigins);
